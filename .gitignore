@@ -1,0 +1,18 @@
+# WorkBuddy 运行数据
+.workbuddy/
+
+# 打包产物 / 分发副本（可用源码重新构建，不入库）
+*.zip
+*.tar.gz
+OCR离线工具_可分享版/
+fnos-app/fpk/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.idea/
+.vscode/
+node_modules/

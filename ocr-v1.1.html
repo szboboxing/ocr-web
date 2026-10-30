@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OCR V1.1 · 离线批量图片 PDF 识别</title>
+
+<!-- 本地依赖（离线优先）；若缺失则在运行时回退 CDN -->
+<script src="libs/pdf.min.js"></script>
+<script src="libs/tesseract.min.js"></script>
+<script src="libs/jspdf.umd.min.js"></script>
+
+<style>
+  :root {
+    --bg:#FFF1E5; --surface:#FFFFFF; --surface-2:#FBE9DD;
+    --accent:#990F3D; --accent-soft:#C7365F;
+    --text:#33302E; --text-muted:#7A726C; --border:#EAD9CC;
+    --shadow:0 6px 24px rgba(153,15,61,.08); --radius:14px;
+  }
+  :root[data-theme="dark"] {
+    --bg:#1A1715; --surface:#25211E; --surface-2:#2F2A26;
+    --accent:#C7365F; --accent-soft:#E0587F;
+    --text:#EBE4DE; --text-muted:#A89E96; --border:#3A342F;
+    --shadow:0 6px 24px rgba(0,0,0,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg:#1A1715; --surface:#25211E; --surface-2:#2F2A26;
+      --accent:#C7365F; --accent-soft:#E0587F;
+      --text:#EBE4DE; --text-muted:#A89E96; --border:#3A342F;
+      --shadow:0 6px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:16px;line-height:1.85;transition:background .25s,color .25s;}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 20px 70px;}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+  .title h1{font-size:26px;margin:0;color:var(--accent);letter-spacing:.5px;}
+  .title .sub{color:var(--text-muted);font-size:14px;}
+  .badge{background:var(--surface-2);color:var(--accent);border:1px solid var(--border);
+    border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;}
+  .theme-switch{display:flex;background:var(--surface-2);border-radius:999px;padding:4px;border:1px solid var(--border);}
+  .theme-switch button{border:none;background:transparent;color:var(--text-muted);font-size:13px;
+    padding:6px 12px;border-radius:999px;cursor:pointer;transition:all .2s;font-family:inherit;}
+  .theme-switch button.active{background:var(--accent);color:#fff;}
+  hr.divider{width:48px;height:3px;background:var(--accent);border:none;margin:14px 0 22px;border-radius:2px;}
+  .sec-title{border-left:4px solid var(--accent);padding-left:12px;margin:26px 0 14px;font-size:18px;font-weight:700;}
+  .banner{background:#FFF4D6;border-left:4px solid #E0A100;color:#6b4e00;padding:12px 16px;border-radius:10px;
+    font-size:14px;margin-bottom:16px;display:none;}
+  :root[data-theme="dark"] .banner{background:#3a2f12;border-left-color:#E0A100;color:#f3d98a;}
+  .drop{border:2px dashed var(--border);border-radius:var(--radius);background:var(--surface);
+    padding:36px 24px;text-align:center;cursor:pointer;transition:all .2s;box-shadow:var(--shadow);}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:var(--surface-2);}
+  .drop .icon{font-size:40px;line-height:1;}
+  .drop .big{font-size:18px;font-weight:600;margin:10px 0 4px;}
+  .drop .hint{color:var(--text-muted);font-size:14px;}
+  .drop input[type=file]{display:none;}
+  .controls{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;align-items:flex-end;}
+  .control{display:flex;flex-direction:column;gap:6px;}
+  .control label{font-size:13px;color:var(--text-muted);}
+  select,.btn{font-family:inherit;font-size:14px;border-radius:10px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text);padding:9px 14px;cursor:pointer;transition:all .2s;}
+  select:hover,.btn:hover{border-color:var(--accent);}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .btn.primary:hover{background:var(--accent-soft);}
+  .btn.sm{padding:5px 10px;font-size:13px;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);}
+  .chk input{width:16px;height:16px;accent-color:var(--accent);}
+  .sliders{display:flex;gap:18px;flex-wrap:wrap;}
+  .slider{display:flex;flex-direction:column;gap:4px;min-width:180px;}
+  .slider label{font-size:13px;color:var(--text-muted);display:flex;justify-content:space-between;}
+  .slider input[type=range]{width:100%;accent-color:var(--accent);}
+  .progress-box{margin-top:20px;display:none;}
+  .progress-bar{height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden;border:1px solid var(--border);}
+  .progress-bar>span{display:block;height:100%;width:0%;background:var(--accent);transition:width .3s;}
+  .progress-text{font-size:14px;color:var(--text-muted);margin-top:8px;}
+  .log{font-size:13px;color:var(--text-muted);max-height:150px;overflow:auto;margin-top:10px;
+    background:var(--surface-2);border-radius:10px;padding:10px 14px;border:1px solid var(--border);white-space:pre-wrap;}
+  .file-list{display:flex;flex-direction:column;gap:14px;margin-top:8px;}
+  .file-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 16px;box-shadow:var(--shadow);}
+  .fc-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .fc-head .name{font-weight:700;word-break:break-all;}
+  .fc-head .meta{color:var(--text-muted);font-size:13px;}
+  .fc-status{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--accent);}
+  .fc-status.done{background:rgba(40,160,90,.15);color:#1f8a4d;}
+  .fc-status.err{background:rgba(200,40,40,.15);color:#c02828;}
+  .fc-status.cancelled{background:rgba(120,120,120,.18);color:#777;}
+  .fc-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;}
+  .fc-text{width:100%;min-height:120px;resize:vertical;background:var(--surface-2);color:var(--text);
+    border:1px solid var(--border);border-radius:10px;padding:10px;font-family:Consolas,monospace;font-size:13px;line-height:1.6;}
+  .empty{color:var(--text-muted);font-size:14px;padding:8px 2px;}
+  .export-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;}
+  .export-bar .fmt{display:flex;gap:6px;align-items:center;}
+  .preview-wrap{margin-top:12px;display:none;}
+  .preview-wrap canvas{max-width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;}
+  .fc-body{display:flex;gap:14px;margin-top:12px;align-items:flex-start;}
+  .fc-thumb{flex:0 0 96px;width:96px;height:128px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .fc-thumb img{max-width:100%;max-height:100%;display:block;}
+  .fc-thumb .ph{font-size:34px;color:var(--text-muted);}
+  .fc-prog{flex:1;min-width:0;}
+  .fc-pbar{height:8px;background:var(--surface-2);border-radius:999px;overflow:hidden;border:1px solid var(--border);}
+  .fc-pbar>span{display:block;height:100%;width:0%;background:var(--accent);transition:width .25s;}
+  .fc-ptext{font-size:13px;color:var(--text-muted);margin-top:6px;min-height:1.2em;word-break:break-word;}
+  @media(max-width:560px){ .fc-body{flex-direction:column;} .fc-thumb{width:100%;height:160px;} }
+  .note{background:var(--surface-2);border-left:4px solid var(--accent-soft);padding:12px 16px;
+    border-radius:10px;font-size:14px;color:var(--text);margin-top:14px;}
+  .note code{background:var(--surface);padding:1px 6px;border-radius:6px;border:1px solid var(--border);}
+  footer{margin-top:40px;font-size:13px;color:var(--text-muted);text-align:center;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">
+      <h1>PDF 图片 OCR 识别</h1>
+      <span class="badge">V1.1</span>
+      <span class="sub">离线 · 批量 · 纠斜 · 颜色校正 · 多格式导出</span>
+    </div>
+    <div class="theme-switch" id="themeSwitch" title="主题切换">
+      <button data-theme="auto" class="active">跟随系统</button>
+      <button data-theme="light">明亮</button>
+      <button data-theme="dark">昏暗</button>
+    </div>
+  </header>
+  <hr class="divider" />
+
+  <div class="banner" id="fileProtoBanner">
+    ⚠️ 你正在用 <code>file://</code> 直接打开本页。离线 OCR 的 Worker / WASM 在部分浏览器（如 Chrome）下会被安全策略拦截。
+    请改用本地服务打开：双击目录里的 <code>启动本地服务.bat</code>，再访问 <code>http://localhost:8765/ocr-v1.1.html</code>。
+    （Firefox 通常可直接双击打开。）
+  </div>
+
+  <div class="drop" id="dropZone">
+    <div class="icon">📚</div>
+    <div class="big">把 PDF 文件拖到这里（可一次多个）</div>
+    <div class="hint">或点击选择文件 · 仅支持“由图片构成的 PDF”（扫描件 / 影印件）</div>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple />
+  </div>
+
+  <!-- 控制面板 -->
+  <div class="controls">
+    <div class="control">
+      <label for="lang">识别语言</label>
+      <select id="lang">
+        <option value="chi_sim+eng">中文 + 英文（默认）</option>
+        <option value="chi_sim">仅中文（简体）</option>
+        <option value="eng">仅英文</option>
+        <option value="chi_tra+eng">繁体中文 + 英文</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="scale">清晰度（越高越准但越慢）</label>
+      <select id="scale">
+        <option value="1.5">普通 (1.5x)</option>
+        <option value="2" selected>推荐 (2x)</option>
+        <option value="3">高清 (3x)</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="sep">每页之间</label>
+      <select id="sep">
+        <option value="page">插入分页标记</option>
+        <option value="newline">仅换行</option>
+        <option value="none">不分隔</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- 预处理：纠斜 + 颜色校正 -->
+  <div class="sec-title" style="margin-top:18px;">图像预处理（提升准确率）</div>
+  <div class="controls">
+    <label class="chk"><input type="checkbox" id="optDeskew" checked> 自动纠正倾斜</label>
+    <label class="chk"><input type="checkbox" id="optGray"> 灰度化</label>
+    <label class="chk"><input type="checkbox" id="optBin"> 二值化（Otsu 阈值，黑白）</label>
+    <label class="chk"><input type="checkbox" id="optPreview" checked> 显示处理后预览</label>
+  </div>
+  <div class="sliders" style="margin-top:12px;">
+    <div class="slider">
+      <label>亮度 <span id="brightVal">0</span></label>
+      <input type="range" id="bright" min="-100" max="100" value="0">
+    </div>
+    <div class="slider">
+      <label>对比度 <span id="contrastVal">0</span></label>
+      <input type="range" id="contrast" min="-100" max="100" value="0">
+    </div>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div class="controls" style="margin-top:18px;">
+    <button class="btn primary" id="startBtn" disabled>开始识别（全部）</button>
+    <button class="btn" id="pauseBtn" disabled>暂停</button>
+    <button class="btn" id="cancelBtn" disabled>取消</button>
+    <button class="btn" id="clearBtn">清空列表</button>
+    <span id="queueInfo" class="meta" style="color:var(--text-muted);"></span>
+  </div>
+
+  <!-- 进度 -->
+  <div class="progress-box" id="progressBox">
+    <div class="progress-bar"><span id="progressFill"></span></div>
+    <div class="progress-text" id="progressText">准备中…</div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- 批量导出 -->
+  <div class="sec-title">识别结果（可批量选择导出）</div>
+  <div class="export-bar">
+    <span class="meta">导出选中文件为：</span>
+    <div class="fmt">
+      <label class="chk"><input type="radio" name="fmt" value="word" checked> Word</label>
+      <label class="chk"><input type="radio" name="fmt" value="html"> HTML</label>
+      <label class="chk"><input type="radio" name="fmt" value="pdf"> 可编辑 PDF</label>
+    </div>
+    <button class="btn" id="exportSelBtn" disabled>导出选中</button>
+    <span id="exportInfo" class="meta" style="color:var(--text-muted);"></span>
+  </div>
+  <div class="file-list" id="fileList"><div class="empty">还没有文件。拖入 PDF 后点击“开始识别”。</div></div>
+
+  <div class="note">
+    💡 <strong>离线说明：</strong>本工具默认从同目录 <code>libs/</code> 读取 pdf.js、tesseract.js 及语言包，<strong>无需联网</strong>。
+    若 <code>libs/</code> 缺失，会自动回退到 CDN（需联网）。建议用 <code>启动本地服务.bat</code> 打开以兼容 Worker/WASM。
+    <br>    📄 <strong>“可编辑 PDF”</strong>指导出的是带<strong>真实文字层</strong>的 PDF（文字可选中 / 复制），而非把图片贴进 PDF；
+    已内嵌中文字体（DroidSansFallback），中文可正常显示；如需在 Acrobat 里改字需 Pro 版，但文本本身是真实、可检索的。
+  </div>
+
+  <footer>纯前端离线 OCR · pdf.js + Tesseract.js + jsPDF · V1.1</footer>
+</div>
+
+<script>
+/* ============ 主题切换（三态，localStorage）============ */
+(function(){
+  const root=document.documentElement, KEY='ocr-theme';
+  const saved=localStorage.getItem(KEY)||'auto';
+  applyTheme(saved);
+  document.querySelectorAll('#themeSwitch button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.theme===saved);
+    b.addEventListener('click',()=>{
+      localStorage.setItem(KEY,t=b.dataset.theme);
+      applyTheme(t);
+      document.querySelectorAll('#themeSwitch button').forEach(x=>x.classList.toggle('active',x.dataset.theme===t));
+    });
+  });
+  function applyTheme(t){ t==='auto'?root.removeAttribute('data-theme'):root.setAttribute('data-theme',t); }
+})();
+
+/* ============ 启动即配置 pdf.js 本地 Worker（用于上传时生成封面缩略图）============ */
+if(typeof pdfjsLib!=='undefined'){ pdfjsLib.GlobalWorkerOptions.workerSrc='libs/pdf.worker.min.js'; }
+
+/* ============ 依赖加载：本地优先，失败回退 CDN ============ */
+let USE_LOCAL=false;
+let TESS_PATHS={};
+function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('加载失败:'+src));document.head.appendChild(s);});}
+
+async function ensureLibs(){
+  if(typeof pdfjsLib!=='undefined' && typeof Tesseract!=='undefined' && typeof window.jspdf!=='undefined'){
+    USE_LOCAL=true;
+  }else{
+    // 本地缺失 -> CDN
+    if(typeof pdfjsLib==='undefined') await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    if(typeof Tesseract==='undefined') await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    if(typeof window.jspdf==='undefined') await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    USE_LOCAL=false;
+  }
+  if(USE_LOCAL){
+    pdfjsLib.GlobalWorkerOptions.workerSrc='libs/pdf.worker.min.js';
+    TESS_PATHS={workerPath:'libs/tesseract-worker.min.js', corePath:'libs/', langPath:'libs/tesseract-lang'};
+  }else{
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    TESS_PATHS={};
+  }
+  if(location.protocol==='file:') document.getElementById('fileProtoBanner').style.display='block';
+}
+
+/* ============ DOM ============ */
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+const startBtn=document.getElementById('startBtn');
+const pauseBtn=document.getElementById('pauseBtn');
+const cancelBtn=document.getElementById('cancelBtn');
+const clearBtn=document.getElementById('clearBtn');
+const queueInfo=document.getElementById('queueInfo');
+const fileList=document.getElementById('fileList');
+const progressBox=document.getElementById('progressBox');
+const progressFill=document.getElementById('progressFill');
+const progressText=document.getElementById('progressText');
+const logEl=document.getElementById('log');
+const exportSelBtn=document.getElementById('exportSelBtn');
+const exportInfo=document.getElementById('exportInfo');
+
+let fileItems=[]; let uid=0; let busy=false; let worker=null;
+let runState='idle';            // idle | running | paused | cancelling
+let cancelFlag=false;
+let pauseResolvers=[];
+function waitResume(){ return new Promise(r=>pauseResolvers.push(r)); }
+function updateRunButtons(){
+  if(runState==='idle'){
+    startBtn.disabled = fileItems.length===0;
+    startBtn.textContent='开始识别（全部）';
+    pauseBtn.disabled=true; pauseBtn.textContent='暂停';
+    cancelBtn.disabled=true;
+  } else if(runState==='running'){
+    startBtn.disabled=true; startBtn.textContent='开始识别（全部）';
+    pauseBtn.disabled=false; pauseBtn.textContent='暂停';
+    cancelBtn.disabled=false;
+  } else if(runState==='paused'){
+    startBtn.disabled=false; startBtn.textContent='继续识别';
+    pauseBtn.disabled=true; pauseBtn.textContent='暂停';
+    cancelBtn.disabled=false;
+  } else { // cancelling
+    startBtn.disabled=true; pauseBtn.disabled=true; cancelBtn.disabled=true;
+  }
+}
+
+/* ============ 文件选择 / 拖放（批量）============ */
+dropZone.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{ if(e.target.files.length) addFiles(e.target.files); fileInput.value=''; });
+['dragenter','dragover'].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.remove('drag');}));
+dropZone.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+async function addFiles(fileListLike){
+  const arr=Array.from(fileListLike).filter(f=>f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'));
+  if(arr.length!==fileListLike.length) log('已忽略非 PDF 文件。');
+  const added=[];
+  arr.forEach(f=>{
+    const it={id:++uid,file:f,name:f.name,size:f.size,status:'待处理',pages:0,totalPages:0,curPage:0,
+      progress:0,progressText:'待处理',text:'',thumb:null,preview:null,error:null,selected:true};
+    fileItems.push(it); added.push(it);
+  });
+  renderList(); updateQueue();
+  // 逐个生成封面缩略图（渲染第 1 页），失败则保留占位图标
+  for(const it of added){ try{ await loadThumb(it); }catch(_){} }
+}
+
+function statusClass(s){
+  return s==='完成'?'done':(s==='失败'?'err':(s==='已取消'?'cancelled':''));
+}
+
+// 上传后立即为每本 PDF 渲染第 1 页作为封面缩略图，确保每个文件都“看得见”
+async function loadThumb(it){
+  if(typeof pdfjsLib==='undefined') return;
+  let pdf=null;
+  try{
+    const buf=await it.file.arrayBuffer();
+    pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    const page=await pdf.getPage(1);
+    const vp=page.getViewport({scale:1});
+    const tW=96, sc=tW/vp.width;
+    const tvp=page.getViewport({scale:sc});
+    const c=makeCanvas(Math.ceil(tvp.width),Math.ceil(tvp.height));
+    await page.render({canvasContext:c.getContext('2d'),viewport:tvp}).promise;
+    it.thumb=c.toDataURL('image/png');
+    const card=fileList.querySelector(`.file-card[data-id="${it.id}"]`);
+    if(card){ const box=card.querySelector('.fc-thumb'); if(box) box.innerHTML=`<img src="${it.thumb}" alt="封面预览">`; }
+  }catch(e){ /* 无法渲染则保留 📄 占位 */ }
+  finally{ if(pdf){ try{ await pdf.destroy(); }catch(_){} } }
+}
+
+function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function log(m){ const t=new Date().toLocaleTimeString(); logEl.textContent+=`[${t}] ${m}\n`; logEl.scrollTop=logEl.scrollHeight; }
+function updateQueue(){
+  const n=fileItems.length;
+  queueInfo.textContent = n? `队列：${n} 个文件`:'';
+  exportSelBtn.disabled = fileItems.filter(f=>f.text).length===0;
+  updateRunButtons();
+}
+
+/* ============ 渲染文件列表 ============ */
+function renderList(){
+  if(!fileItems.length){ fileList.innerHTML='<div class="empty">还没有文件。拖入 PDF 后点击“开始识别”。</div>'; return; }
+  fileList.innerHTML='';
+  fileItems.forEach(it=>{
+    const card=document.createElement('div'); card.className='file-card'; card.dataset.id=it.id;
+    const statusCls = statusClass(it.status);
+    card.innerHTML=`
+      <div class="fc-head">
+        <input type="checkbox" class="fc-check" ${it.selected?'checked':''}>
+        <span class="name">${escapeHtml(it.name)}</span>
+        <span class="meta">${fmtSize(it.size)}</span>
+        <span class="fc-status ${statusCls}">${it.status}</span>
+      </div>
+      <div class="fc-body">
+        <div class="fc-thumb">${ it.thumb ? `<img src="${it.thumb}" alt="封面预览">` : '<span class="ph">📄</span>' }</div>
+        <div class="fc-prog">
+          <div class="fc-pbar"><span style="width:${it.progress||0}%"></span></div>
+          <div class="fc-ptext">${escapeHtml(it.progressText||'待处理')}</div>
+        </div>
+      </div>
+      <div class="fc-actions">
+        <button class="btn sm copy" ${it.text?'':'disabled'}>复制</button>
+        <button class="btn sm word" ${it.text?'':'disabled'}>Word</button>
+        <button class="btn sm html" ${it.text?'':'disabled'}>HTML</button>
+        <button class="btn sm pdf" ${it.text?'':'disabled'}>PDF</button>
+      </div>
+      <textarea class="fc-text" readonly placeholder="识别结果将显示在这里…">${escapeHtml(it.text)}</textarea>
+      <div class="preview-wrap" style="display:${it.preview?'block':'none'}">
+        <div class="meta">处理后预览（用于纠斜/颜色校正验证）</div>
+        <img src="${it.preview||''}" alt="preview" style="max-width:100%;border:1px solid var(--border);border-radius:10px;background:#fff;">
+      </div>`;
+    fileList.appendChild(card);
+  });
+  // 绑定事件
+  fileList.querySelectorAll('.file-card').forEach(card=>{
+    const id=+card.dataset.id; const it=fileItems.find(x=>x.id===id);
+    card.querySelector('.fc-check').addEventListener('change',e=>{it.selected=e.target.checked;});
+    card.querySelector('.copy').addEventListener('click',()=>copyText(it.text));
+    card.querySelector('.word').addEventListener('click',()=>exportWord(it.name,it.text));
+    card.querySelector('.html').addEventListener('click',()=>exportHtml(it.name,it.text));
+    card.querySelector('.pdf').addEventListener('click',()=>exportPdf(it.name,it.text));
+  });
+}
+
+/* ============ 单独更新某个文件的进度（不重绘整列，避免每页卡顿）============ */
+function updateCardProgress(it){
+  const card=fileList.querySelector(`.file-card[data-id="${it.id}"]`);
+  if(!card) return;
+  const bar=card.querySelector('.fc-pbar>span');
+  const txt=card.querySelector('.fc-ptext');
+  const st=card.querySelector('.fc-status');
+  if(bar) bar.style.width=(it.progress||0)+'%';
+  if(txt) txt.textContent=it.progressText||'';
+  if(st){ st.textContent=it.status; st.className='fc-status '+statusClass(it.status); }
+}
+
+/* ============ 图像预处理：纠斜 + 颜色校正 ============ */
+function getOpts(){
+  return {
+    deskew:document.getElementById('optDeskew').checked,
+    gray:document.getElementById('optGray').checked,
+    bin:document.getElementById('optBin').checked,
+    preview:document.getElementById('optPreview').checked,
+    bright:+document.getElementById('bright').value,
+    contrast:+document.getElementById('contrast').value
+  };
+}
+function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
+function rotateCanvas(src,angDeg){
+  const a=angDeg*Math.PI/180, w=src.width,h=src.height;
+  const cos=Math.abs(Math.cos(a)),sin=Math.abs(Math.sin(a));
+  const nw=Math.ceil(w*cos+h*sin), nh=Math.ceil(w*sin+h*cos);
+  const c=makeCanvas(nw,nh),ctx=c.getContext('2d');
+  ctx.translate(nw/2,nh/2);ctx.rotate(a);ctx.drawImage(src,-w/2,-h/2);
+  return c;
+}
+function projectionVariance(canvas){
+  const img=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data,w=canvas.width,h=canvas.height; const proj=new Float64Array(h);
+  for(let y=0;y<h;y++){let s=0;for(let x=0;x<w;x++)s+=255-d[(y*w+x)*4];proj[y]=s;}
+  let mean=0;for(let y=0;y<h;y++)mean+=proj[y];mean/=h;
+  let v=0;for(let y=0;y<h;y++){const dd=proj[y]-mean;v+=dd*dd;}
+  return v/h;
+}
+function detectSkew(src){
+  const maxW=320; let w=src.width,h=src.height; const sc=Math.min(1,maxW/w);
+  const dw=Math.max(1,Math.round(w*sc)),dh=Math.max(1,Math.round(h*sc));
+  const small=makeCanvas(dw,dh),sctx=small.getContext('2d');
+  sctx.drawImage(src,0,0,dw,dh);
+  const img=sctx.getImageData(0,0,dw,dh),d=img.data;
+  for(let i=0;i<d.length;i+=4){const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=d[i+1]=d[i+2]=g;}
+  sctx.putImageData(img,0,0);
+  let best=0,bestScore=-1;
+  for(let a=-10;a<=10;a+=1){const s=projectionVariance(rotateCanvas(small,a));if(s>bestScore){bestScore=s;best=a;}}
+  let lo=best-1,hi=best+1;
+  for(let step=0.5;step>=0.25;step/=2){
+    for(let a=lo;a<=hi+1e-9;a+=step){const s=projectionVariance(rotateCanvas(small,a));if(s>bestScore){bestScore=s;best=a;}}
+    lo=best-step;hi=best+step;
+  }
+  return best;
+}
+function adjustBC(img,bright,contrast){
+  const d=img.data; const cf=(259*(contrast+255))/(255*(259-contrast));
+  for(let i=0;i<d.length;i+=4){for(let k=0;k<3;k++){let v=cf*(d[i+k]-128)+128+bright;d[i+k]=v<0?0:v>255?255:v;}}
+}
+function toGray(img){const d=img.data;for(let i=0;i<d.length;i+=4){const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=d[i+1]=d[i+2]=g;}}
+function otsu(gray){
+  const hist=new Array(256).fill(0); for(let i=0;i<gray.length;i++)hist[gray[i]]++;
+  const total=gray.length; let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];
+  let sumB=0,wB=0,maxVar=0,th=0;
+  for(let i=0;i<256;i++){wB+=hist[i];if(!wB)continue;const wF=total-wB;if(!wF)break;sumB+=i*hist[i];
+    const mB=sumB/wB,mF=(sum-sumB)/wF,varB=wB*wF*(mB-mF)*(mB-mF);if(varB>maxVar){maxVar=varB;th=i;}}
+  return th;
+}
+function binarize(img){
+  const d=img.data,gray=new Uint8Array(d.length/4);
+  for(let i=0;i<gray.length;i++)gray[i]=d[i*4];
+  const t=otsu(gray);
+  for(let i=0;i<gray.length;i++){const v=gray[i]>=t?255:0;d[i*4]=d[i*4+1]=d[i*4+2]=v;}
+}
+function preprocess(src){
+  let canvas=src; const o=getOpts();
+  if(o.deskew){ const ang=detectSkew(canvas); if(Math.abs(ang)>0.1) canvas=rotateCanvas(canvas,ang); }
+  const ctx=canvas.getContext('2d');
+  let img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  if(o.bright!==0||o.contrast!==0) adjustBC(img,o.bright,o.contrast);
+  if(o.gray||o.bin) toGray(img);
+  if(o.bin) binarize(img);
+  ctx.putImageData(img,0,0);
+  return canvas;
+}
+
+/* ============ 主流程：批量识别 ============ */
+startBtn.addEventListener('click',()=>{
+  if(runState==='paused'){ resumeRun(); return; }
+  if(runState==='idle') runAll();
+});
+pauseBtn.addEventListener('click',()=>{
+  if(runState!=='running') return;
+  runState='paused'; updateRunButtons();
+  progressText.textContent='已暂停。点击“继续识别”恢复。';
+  log('⏸ 已暂停。');
+});
+cancelBtn.addEventListener('click',()=>{
+  if(runState==='idle'||runState==='cancelling') return;
+  cancelFlag=true; progressText.textContent='正在取消…';
+  if(runState==='paused'){ runState='cancelling'; pauseResolvers.forEach(r=>r()); pauseResolvers=[]; }
+  else runState='cancelling';
+  updateRunButtons();
+  log('⏹ 取消请求已发送（会等当前页结束后停止）…');
+});
+function resumeRun(){
+  if(runState!=='paused') return;
+  runState='running'; pauseResolvers.forEach(r=>r()); pauseResolvers=[];
+  updateRunButtons();
+  log('▶ 继续识别。');
+}
+
+async function runAll(){
+  if(busy||!fileItems.length) return;
+  busy=true; runState='running'; cancelFlag=false; updateRunButtons(); updateQueue();
+  progressBox.style.display='block';
+  const lang=document.getElementById('lang').value;
+  const scale=parseFloat(document.getElementById('scale').value);
+  const sepMode=document.getElementById('sep').value;
+  const sepMap={page:n=>'\n\n——— 第 '+n+' 页 ———\n\n',newline:()=>'\n',none:()=>''};
+  const sepFn=sepMap[sepMode]||sepMap.page;
+
+  // 1) 加载依赖（本地优先，失败回退 CDN）
+  try{ await ensureLibs(); }
+  catch(e){ log('依赖加载异常：'+(e&&e.message||e)); }
+
+  // 2) 创建 OCR 引擎：带可见进度 + 错误处理，避免静默卡在“准备中”
+  let curFile=0,curPage=0;
+  const STAGE_TXT={
+    'loading tesseract core':'加载 OCR 内核…',
+    'initializing tesseract':'初始化引擎…',
+    'loading language traineddata':'加载语言包（中文/英文）…',
+    'initializing api':'初始化识别接口…'
+  };
+  progressText.textContent='正在准备 OCR 引擎…';
+  log(`创建 OCR 引擎（语言 ${lang}）…`);
+  try{
+    worker=await Tesseract.createWorker(lang,1,{...TESS_PATHS,logger:m=>{
+      if(m.status==='recognizing text'){ const p=Math.round(m.progress*100);
+        progressText.textContent=`第 ${curFile}/${fileItems.length} 个文件 · 第 ${curPage} 页 · 识别中 ${p}%`; }
+      else if(STAGE_TXT[m.status]){ progressText.textContent=STAGE_TXT[m.status]; }
+    }});
+  }catch(err){
+    const msg='❌ OCR 引擎初始化失败：'+(err&&err.message?err.message:err);
+    progressText.textContent=msg;
+    log(msg); console.error(err);
+    busy=false; runState='idle'; updateRunButtons(); updateQueue(); return;
+  }
+
+  // 3) 逐文件识别（单次打开 PDF，避免重复解析；已失败项跳过）
+  let totalPages=0, donePages=0;
+  const setOverall=()=>{ if(totalPages>0) progressFill.style.width=Math.min(100,Math.round(donePages/totalPages*100))+'%'; };
+
+  for(const it of fileItems){
+    if(cancelFlag) break;
+    if(it.status==='完成'||it.status==='失败') continue;
+    curFile++;
+    it.status='处理中'; it.progress=0; it.progressText='准备中…'; updateCardProgress(it);
+    let pdf=null;
+    try{
+      const buf=await it.file.arrayBuffer();
+      progressText.textContent=`第 ${curFile}/${fileItems.length} 个文件：解析 PDF（${it.name}）…`;
+      pdf=await pdfjsLib.getDocument({data:buf}).promise;
+      it.pages=pdf.numPages; it.totalPages=pdf.numPages; totalPages+=pdf.numPages;
+      it.progressText=`第 0/${pdf.numPages} 页`; updateCardProgress(it);
+      let text='';
+      for(let i=1;i<=pdf.numPages;i++){
+        if(cancelFlag) break;
+        while(runState==='paused'){ it.progressText='已暂停'; updateCardProgress(it); progressText.textContent='已暂停。点击“继续识别”恢复。'; await waitResume(); }
+        if(cancelFlag) break;
+        curPage=i;
+        it.curPage=i; it.progress=Math.round((i-1)/pdf.numPages*100); it.progressText=`第 ${i}/${pdf.numPages} 页：渲染…`; updateCardProgress(it);
+        progressText.textContent=`第 ${curFile}/${fileItems.length} 个文件 · 第 ${i}/${pdf.numPages} 页：渲染…`;
+        const page=await pdf.getPage(i);
+        const vp=page.getViewport({scale});
+        const cv=makeCanvas(Math.ceil(vp.width),Math.ceil(vp.height));
+        await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+        const proc=preprocess(cv);
+        const {data}=await worker.recognize(proc);
+        text+=(i>1?sepFn(i):'')+data.text.trim()+'\n';
+        if(getOpts().preview && i===pdf.numPages){
+          const pw=Math.min(360,proc.width), ph=Math.round(pw*proc.height/proc.width);
+          const pv=makeCanvas(pw,ph);
+          pv.getContext('2d').drawImage(proc,0,0,pw,ph);
+          it.preview=pv.toDataURL('image/png');
+        }
+        it.progress=Math.round(i/pdf.numPages*100); it.progressText=`第 ${i}/${pdf.numPages} 页：完成`; updateCardProgress(it);
+        donePages++; setOverall();
+      }
+      if(cancelFlag) break;
+      it.text=text.trim(); it.status='完成'; it.error=null; it.progress=100; it.progressText='完成（'+it.text.length+' 字符）';
+      log(`✔ ${it.name} 完成（${it.text.length} 字符，${pdf.numPages} 页）`);
+    }catch(e){
+      it.status='失败'; it.error=e.message; it.progress=0; it.progressText='失败：'+e.message;
+      log(`✘ ${it.name} 失败：${e.message}`);
+      console.error(e);
+    }finally{
+      if(pdf){ try{ await pdf.destroy(); }catch(_){} }
+    }
+    renderList();
+  }
+
+  if(worker){ try{ await worker.terminate(); }catch(_){} worker=null; }
+
+  if(cancelFlag){
+    fileItems.forEach(it=>{ if(it.status==='处理中'||it.status==='待处理'){ it.status='已取消'; it.progressText='已取消'; } });
+    progressText.textContent='已取消。已完成的部分仍可勾选导出。';
+    log('—— 已取消 ——');
+  } else {
+    progressText.textContent='全部处理完成。可勾选文件后导出。';
+    progressFill.style.width='100%';
+    log('—— 结束 ——');
+  }
+
+  cancelFlag=false;
+  busy=false; runState='idle';
+  renderList(); updateRunButtons(); updateQueue();
+}
+
+/* ============ 导出 ============ */
+exportSelBtn.addEventListener('click',()=>{
+  const fmt=document.querySelector('input[name=fmt]:checked').value;
+  const sel=fileItems.filter(f=>f.selected&&f.text);
+  if(!sel.length){alert('请先勾选已识别的文件。');return;}
+  let i=0; exportInfo.textContent=`导出中（${sel.length} 个）…`;
+  const next=async()=>{
+    if(i>=sel.length){exportInfo.textContent='已导出。';return;}
+    const it=sel[i++];
+    if(fmt==='word')exportWord(it.name,it.text);
+    else if(fmt==='html')exportHtml(it.name,it.text);
+    else await exportPdf(it.name,it.text);
+    setTimeout(next,400);
+  };
+  next();
+});
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function downloadBlob(blob,filename){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+async function copyText(t){ if(!t)return; try{await navigator.clipboard.writeText(t);alert('已复制');}catch{document.querySelector('.fc-text')?.select();document.execCommand('copy');alert('已复制（兼容模式）');} }
+
+function exportWord(name,text){
+  const html=`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escapeHtml(name)}</title></head><body><pre style="font-family:Consolas,'Microsoft YaHei',monospace;font-size:14px;white-space:pre-wrap;line-height:1.7">${escapeHtml(text)}</pre></body></html>`;
+  downloadBlob(new Blob(['﻿'+html],{type:'application/msword'}),name+'_OCR.doc');
+}
+function exportHtml(name,text){
+  const body=text.split('\n').map(l=>'<p>'+escapeHtml(l)+'</p>').join('');
+  const html=`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(name)}</title><style>body{font-family:'Microsoft YaHei',sans-serif;line-height:1.8;max-width:900px;margin:40px auto;padding:0 20px;color:#222}h1{color:#990F3D;border-bottom:3px solid #990F3D;padding-bottom:8px}</style></head><body><h1>${escapeHtml(name)} · OCR 识别结果</h1>${body}</body></html>`;
+  downloadBlob(new Blob(['﻿'+html],{type:'text/html'}),name+'_OCR.html');
+}
+function abToBinaryString(ab){
+  const bytes=new Uint8Array(ab); let s=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ s+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk)); }
+  return s;
+}
+let _cjkFont=null;
+async function loadCjkFont(){
+  if(_cjkFont) return _cjkFont;
+  const urls=['libs/DroidSansFallbackFull.ttf',
+    'https://cdn.jsdelivr.net/gh/joeky888/CJK-font@master/DroidSansFallbackFull.ttf'];
+  for(const u of urls){
+    try{ const r=await fetch(u); if(!r.ok) continue;
+      _cjkFont=abToBinaryString(await r.arrayBuffer()); return _cjkFont;
+    }catch(e){ /* 尝试下一个源 */ }
+  }
+  return null;
+}
+async function exportPdf(name,text){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const font=await loadCjkFont();
+  if(font){ doc.addFileToVFS('CJK.ttf',font); doc.addFont('CJK.ttf','CJK','normal'); doc.setFont('CJK'); }
+  else { doc.setFont('helvetica','normal'); console.warn('未加载中文字体，中文可能无法显示。'); }
+  const pw=doc.internal.pageSize.getWidth(),ph=doc.internal.pageSize.getHeight();
+  const m=40,maxW=pw-m*2,lineH=15;
+  doc.setFontSize(11);
+  const lines=doc.splitTextToSize(text,maxW);
+  let y=m;
+  for(let i=0;i<lines.length;i++){
+    if(y>ph-m){doc.addPage();y=m;}
+    doc.text(lines[i],m,y); y+=lineH;
+  }
+  doc.save(name+'_OCR.pdf');
+}
+
+/* ============ 清空 ============ */
+clearBtn.addEventListener('click',()=>{
+  if(runState!=='idle'){alert('正在处理中，请先“取消”或等待完成。');return;}
+  fileItems=[]; renderList(); updateQueue();
+  progressBox.style.display='none'; progressFill.style.width='0%'; logEl.textContent='';
+});
+
+// 滑块数值显示
+document.getElementById('bright').addEventListener('input',e=>document.getElementById('brightVal').textContent=e.target.value);
+document.getElementById('contrast').addEventListener('input',e=>document.getElementById('contrastVal').textContent=e.target.value);
+
+updateQueue();
+</script>
+</body>
+</html>

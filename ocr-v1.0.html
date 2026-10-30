@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF 图片 OCR 识别工具</title>
+
+<!-- pdf.js（PDF 渲染为图片） -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- Tesseract.js（浏览器端 OCR） -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+
+<style>
+  /* ===== 设计令牌：亮色（暖色系 v1.2）===== */
+  :root {
+    --bg: #FFF1E5;
+    --surface: #FFFFFF;
+    --surface-2: #FBE9DD;
+    --accent: #990F3D;
+    --accent-soft: #C7365F;
+    --text: #33302E;
+    --text-muted: #7A726C;
+    --border: #EAD9CC;
+    --shadow: 0 6px 24px rgba(153,15,61,0.08);
+    --radius: 14px;
+  }
+  /* ===== 设计令牌：暗色 ===== */
+  :root[data-theme="dark"] {
+    --bg: #1A1715;
+    --surface: #25211E;
+    --surface-2: #2F2A26;
+    --accent: #C7365F;
+    --accent-soft: #E0587F;
+    --text: #EBE4DE;
+    --text-muted: #A89E96;
+    --border: #3A342F;
+    --shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  /* 跟随系统：未手动指定主题时，按系统偏好套用暗色令牌 */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --bg: #1A1715;
+      --surface: #25211E;
+      --surface-2: #2F2A26;
+      --accent: #C7365F;
+      --accent-soft: #E0587F;
+      --text: #EBE4DE;
+      --text-muted: #A89E96;
+      --border: #3A342F;
+      --shadow: 0 6px 24px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.85;
+    transition: background .25s, color .25s;
+  }
+
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  /* 页头 */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .title { display: flex; align-items: baseline; gap: 12px; }
+  .title h1 { font-size: 26px; margin: 0; color: var(--accent); letter-spacing: .5px; }
+  .title .sub { color: var(--text-muted); font-size: 14px; }
+
+  /* 主题切换（三态）*/
+  .theme-switch { display: flex; background: var(--surface-2); border-radius: 999px; padding: 4px; border: 1px solid var(--border); }
+  .theme-switch button {
+    border: none; background: transparent; color: var(--text-muted);
+    font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    transition: all .2s; font-family: inherit;
+  }
+  .theme-switch button.active { background: var(--accent); color: #fff; }
+
+  /* 短分割线 */
+  .divider { width: 48px; height: 3px; background: var(--accent); border: none; margin: 14px 0 22px; border-radius: 2px; }
+
+  /* 区块标题（酒红竖线小标题）*/
+  .sec-title {
+    border-left: 4px solid var(--accent); padding-left: 12px; margin: 26px 0 14px;
+    font-size: 18px; font-weight: 700; color: var(--text);
+  }
+
+  /* 拖放区 */
+  .drop {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    background: var(--surface); padding: 44px 24px; text-align: center;
+    cursor: pointer; transition: all .2s; box-shadow: var(--shadow);
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: var(--surface-2); }
+  .drop .icon { font-size: 42px; line-height: 1; }
+  .drop .big { font-size: 18px; font-weight: 600; margin: 10px 0 4px; }
+  .drop .hint { color: var(--text-muted); font-size: 14px; }
+  .drop input[type=file] { display: none; }
+
+  /* 控制面板 */
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
+  .control { display: flex; flex-direction: column; gap: 6px; }
+  .control label { font-size: 13px; color: var(--text-muted); }
+  select, .btn {
+    font-family: inherit; font-size: 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 9px 14px; cursor: pointer; transition: all .2s;
+  }
+  select:hover, .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { background: var(--accent-soft); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* 进度 */
+  .progress-box { margin-top: 20px; display: none; }
+  .progress-bar { height: 10px; background: var(--surface-2); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+  .progress-bar > span { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .3s; }
+  .progress-text { font-size: 14px; color: var(--text-muted); margin-top: 8px; }
+  .log { font-size: 13px; color: var(--text-muted); max-height: 140px; overflow:auto; margin-top: 10px;
+         background: var(--surface-2); border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border); }
+
+  /* 结果 */
+  .result-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+  #output {
+    width: 100%; min-height: 320px; resize: vertical;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 14px; line-height: 1.7; box-shadow: var(--shadow);
+  }
+  .meta { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+
+  /* 提示条 */
+  .note { background: var(--surface-2); border-left: 4px solid var(--accent-soft);
+          padding: 12px 16px; border-radius: 10px; font-size: 14px; color: var(--text); margin-top: 14px; }
+  footer { margin-top: 40px; font-size: 13px; color: var(--text-muted); text-align: center; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">
+      <h1>PDF 图片 OCR 识别</h1>
+      <span class="sub">拖入扫描件 / 图片型 PDF → 提取文字</span>
+    </div>
+    <div class="theme-switch" id="themeSwitch" title="主题切换">
+      <button data-theme="auto" class="active">跟随系统</button>
+      <button data-theme="light">明亮</button>
+      <button data-theme="dark">昏暗</button>
+    </div>
+  </header>
+  <hr class="divider" />
+
+  <!-- 拖放区 -->
+  <div class="drop" id="dropZone">
+    <div class="icon">📄</div>
+    <div class="big">把 PDF 文件拖到这里</div>
+    <div class="hint">或点击选择文件（仅支持“由图片构成的 PDF”，即扫描件 / 影印件）</div>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf" />
+  </div>
+
+  <!-- 控制面板 -->
+  <div class="controls">
+    <div class="control">
+      <label for="lang">识别语言</label>
+      <select id="lang">
+        <option value="chi_sim+eng">中文 + 英文（默认）</option>
+        <option value="chi_sim">仅中文（简体）</option>
+        <option value="eng">仅英文</option>
+        <option value="chi_tra+eng">繁体中文 + 英文</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="scale">清晰度（越高越准但越慢）</label>
+      <select id="scale">
+        <option value="1.5">普通 (1.5x)</option>
+        <option value="2" selected>推荐 (2x)</option>
+        <option value="3">高清 (3x)</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="sep">每页之间</label>
+      <select id="sep">
+        <option value="page">插入分页标记</option>
+        <option value="newline">仅换行</option>
+        <option value="none">不分隔</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="result-actions">
+    <button class="btn primary" id="startBtn" disabled>开始识别</button>
+    <button class="btn" id="copyBtn" disabled>复制全部</button>
+    <button class="btn" id="downloadBtn" disabled>下载 .txt</button>
+    <button class="btn" id="clearBtn">清空</button>
+  </div>
+
+  <!-- 进度 -->
+  <div class="progress-box" id="progressBox">
+    <div class="progress-bar"><span id="progressFill"></span></div>
+    <div class="progress-text" id="progressText">准备中…</div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- 结果 -->
+  <div class="sec-title">识别结果</div>
+  <div class="meta" id="meta">尚未识别。</div>
+  <textarea id="output" placeholder="识别出的文字会显示在这里…" readonly></textarea>
+
+  <div class="note">
+    💡 说明：本工具<strong>完全在浏览器本地运行</strong>，PDF 不会上传到任何服务器，适合处理含发票、合同等敏感内容的扫描件。
+    首次加载语言包（约几十 MB）需要一点时间，请耐心等待进度条。建议使用 Chrome / Edge 浏览器。
+  </div>
+
+  <footer>纯前端 OCR · pdf.js + Tesseract.js · 离线渲染、本地识别</footer>
+</div>
+
+<script>
+/* ============ 主题切换（三态，localStorage 持久化）============ */
+(function () {
+  const root = document.documentElement;
+  const KEY = 'ocr-theme';
+  const saved = localStorage.getItem(KEY) || 'auto';
+  applyTheme(saved);
+  document.querySelectorAll('#themeSwitch button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.theme;
+      localStorage.setItem(KEY, t);
+      applyTheme(t);
+      document.querySelectorAll('#themeSwitch button').forEach(b =>
+        b.classList.toggle('active', b.dataset.theme === t));
+    });
+  });
+  function applyTheme(t) {
+    if (t === 'auto') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', t);
+  }
+  // 同步初始按钮高亮
+  document.querySelectorAll('#themeSwitch button').forEach(b =>
+    b.classList.toggle('active', b.dataset.theme === saved));
+})();
+
+/* ============ PDF.js worker 配置 ============ */
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ============ DOM ============ */
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const startBtn   = document.getElementById('startBtn');
+const copyBtn    = document.getElementById('copyBtn');
+const dlBtn      = document.getElementById('downloadBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const output     = document.getElementById('output');
+const metaEl     = document.getElementById('meta');
+const progressBox= document.getElementById('progressBox');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const logEl      = document.getElementById('log');
+
+let currentFile = null;
+let busy = false;
+
+/* ============ 文件选择 / 拖放 ============ */
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+
+['dragenter','dragover'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag'); }));
+dropZone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function setFile(file) {
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    alert('请选择 PDF 文件。');
+    return;
+  }
+  currentFile = file;
+  startBtn.disabled = false;
+  metaEl.textContent = `已选择：${file.name}（${formatSize(file.size)}）`;
+  log(`已载入文件：${file.name}`);
+}
+
+function formatSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `[${t}] ${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ============ 开始识别 ============ */
+startBtn.addEventListener('click', runOCR);
+
+async function runOCR() {
+  if (!currentFile || busy) return;
+  busy = true;
+  startBtn.disabled = true;
+  copyBtn.disabled = true; dlBtn.disabled = true;
+  progressBox.style.display = 'block';
+  output.value = '';
+  metaEl.textContent = '识别中…';
+
+  const lang  = document.getElementById('lang').value;
+  const scale = parseFloat(document.getElementById('scale').value);
+  const sepMode = document.getElementById('sep').value;
+  const sepMap = {
+    page:    n => '\n\n——— 第 ' + n + ' 页 ———\n\n',
+    newline: () => '\n',
+    none:    () => ''
+  };
+  const sepFn = sepMap[sepMode] || sepMap.page;
+
+  try {
+    log('正在解析 PDF…');
+    const buf = await currentFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const total = pdf.numPages;
+    log(`PDF 共 ${total} 页，开始逐页识别（语言：${lang}）`);
+
+    let fullText = '';
+
+    for (let i = 1; i <= total; i++) {
+      progressText.textContent = `第 ${i} / ${total} 页：渲染图片…`;
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      progressText.textContent = `第 ${i} / ${total} 页：OCR 识别中…`;
+      const { data } = await Tesseract.recognize(canvas, lang, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const pct = Math.round(m.progress * 100);
+            const pageDone = ((i - 1) / total) * 100;
+            const overall = Math.round(pageDone + (m.progress / total) * 100);
+            progressFill.style.width = overall + '%';
+            progressText.textContent = `第 ${i} / ${total} 页：识别中 ${pct}%`;
+          }
+        }
+      });
+
+      const sep = sepFn(i);
+      fullText += (i > 1 ? sep : '') + data.text.trim() + '\n';
+      progressFill.style.width = Math.round((i / total) * 100) + '%';
+      log(`第 ${i} 页完成（${data.text.trim().length} 字符）`);
+    }
+
+    output.value = fullText.trim();
+    progressText.textContent = `完成！共 ${total} 页。`;
+    progressFill.style.width = '100%';
+    metaEl.textContent = `识别完成：${total} 页，共 ${fullText.trim().length} 个字符。`;
+    copyBtn.disabled = false; dlBtn.disabled = false;
+    log('全部完成 ✅');
+  } catch (err) {
+    console.error(err);
+    progressText.textContent = '出错了：' + err.message;
+    log('错误：' + err.message);
+    alert('处理失败：' + err.message + '\n（请确认是图片型 PDF，且网络可访问 CDN 加载 OCR 语言包）');
+  } finally {
+    busy = false;
+    if (currentFile) startBtn.disabled = false;
+  }
+}
+
+/* ============ 复制 / 下载 / 清空 ============ */
+copyBtn.addEventListener('click', async () => {
+  if (!output.value) return;
+  try { await navigator.clipboard.writeText(output.value); log('已复制到剪贴板'); alert('已复制全部文字'); }
+  catch { output.select(); document.execCommand('copy'); alert('已复制（兼容模式）'); }
+});
+
+dlBtn.addEventListener('click', () => {
+  if (!output.value) return;
+  const blob = new Blob([output.value], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  const name = (currentFile ? currentFile.name.replace(/\.pdf$/i, '') : 'ocr') + '_识别结果.txt';
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('已下载：' + name);
+});
+
+clearBtn.addEventListener('click', () => {
+  currentFile = null;
+  output.value = '';
+  fileInput.value = '';
+  metaEl.textContent = '尚未识别。';
+  startBtn.disabled = true;
+  copyBtn.disabled = true; dlBtn.disabled = true;
+  progressBox.style.display = 'none';
+  progressFill.style.width = '0%';
+  logEl.textContent = '';
+});
+</script>
+</body>
+</html>
