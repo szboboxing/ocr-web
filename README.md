@@ -40,6 +40,10 @@
 （属 OCR 引擎本身限制，预处理校正可提升一部分）。
 
 ## 从 GitHub 获取
+**方式一（推荐）**：到 [Releases](https://github.com/szboboxing/ocr-web/releases) 页面下载
+`OCR-Offline-Tool-v1.1.zip`（37 MB，含全部离线依赖），解压即用，无需克隆仓库。
+
+**方式二**：克隆源码仓库（适合开发者）：
 ```bash
 git clone https://github.com/szboboxing/ocr-web.git
 cd ocr-web
