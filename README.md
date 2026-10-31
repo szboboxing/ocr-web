@@ -3,6 +3,14 @@
 纯前端、本地运行、无需联网。把"由图片构成的 PDF"（扫描件、影印件、发票等）
 拖进网页，自动逐页识别成可编辑文字，支持批量处理与多格式导出。
 
+## 界面预览
+
+主程序（`index.html`）在明亮与昏暗主题下的效果：
+
+| 明亮态 | 昏暗态 |
+| --- | --- |
+| ![明亮态](./screenshots/ocr-light.png) | ![昏暗态](./screenshots/ocr-dark.png) |
+
 ## 包含版本
 - `index.html` —— 主程序入口（与 `ocr-v1.1.html` 内容一致，作为默认首页）
 - `ocr-v1.1.html` —— 主程序：离线 + 批量 + 倾斜校正 + 颜色校正 + 多格式导出
@@ -55,14 +63,6 @@ cd ocr-web
 - Windows（推荐 Chrome / Edge / Firefox 浏览器）
 - 本机有 Python 3 或 Node.js（用于 `启动本地服务.bat`；也可手动启动任意静态服务）
 - 首次识别会在本地加载语言包，稍候片刻即可。
-
-## 界面预览
-
-主程序（`index.html`）在明亮与昏暗主题下的效果：
-
-| 明亮态 | 昏暗态 |
-| --- | --- |
-| ![明亮态](./screenshots/ocr-light.png) | ![昏暗态](./screenshots/ocr-dark.png) |
 
 ## License
 
