@@ -56,6 +56,14 @@ cd ocr-web
 - 本机有 Python 3 或 Node.js（用于 `启动本地服务.bat`；也可手动启动任意静态服务）
 - 首次识别会在本地加载语言包，稍候片刻即可。
 
+## 界面预览
+
+主程序（`index.html`）在明亮与昏暗主题下的效果：
+
+| 明亮态 | 昏暗态 |
+| --- | --- |
+| ![明亮态](./screenshots/ocr-light.png) | ![昏暗态](./screenshots/ocr-dark.png) |
+
 ## License
 
 [MIT](./LICENSE) © 2026 boboxing
